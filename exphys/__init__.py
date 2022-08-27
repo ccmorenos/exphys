@@ -48,17 +48,45 @@ class DataTable():
             "loglog": lambda x, m, b: np.exp(b) * x**m
         }
 
-    def get_unit(self, expr):
+    def get_unit(self, asked_unit):
         """
         Return the unit of the measure.
 
         Parameters
         ----------
-        expr: Str.
-            Exression of the unit.
+        asked_unit: Str.
+            Measure or expression of the unit.
 
         """
-        return self.ureg(expr).units
+        if asked_unit in self.data_units.keys():
+            return self.ureg(self.data_units[asked_unit])
+        elif asked_unit in self.singles_units.keys():
+            return self.ureg(self.singles_units[asked_unit])
+        else:
+            return self.ureg(asked_unit)
+
+    def get_measure(self, var, is_unc=False):
+        """
+        Return the measure from the data o from the singles.
+
+        Parameters
+        ----------
+        var: Str.
+            Name of the measure asked.
+
+        is_unc: Bool.
+            Flag that indicates whether the value or the uncertainty of the
+            measure is asked.
+
+        Returns
+        -------
+            Array or number with the measure value or uncertainty.
+
+        """
+        if var in self.data.columns:
+            return self.data[var + "_unc"] if is_unc else self.data[var]
+        elif var in self.singles.keys():
+            return self.singles_unc[var] if is_unc else self.singles[var]
 
     def round_digits(self, data, dig=1):
         """
@@ -133,29 +161,6 @@ class DataTable():
         self.singles_unc[name] = unc
         self.singles_units[name] = unit
 
-    def get_measure(self, var, is_unc=False):
-        """
-        Return the measure from the data o from the singles.
-
-        Parameters
-        ----------
-        var: Str.
-            Name of the measure asked.
-
-        is_unc: Bool.
-            Flag that indicates whether the value or the uncertainty of the
-            measure is asked.
-
-        Returns
-        -------
-            Array or number with the measure value or uncertainty.
-
-        """
-        if var in self.data.columns:
-            return self.data[var + "_unc"] if is_unc else self.data[var]
-        elif var in self.singles.keys():
-            return self.singles_unc[var] if is_unc else self.singles[var]
-
     def add_column(self, col, unit="", full_val=np.nan, full_unc=np.nan):
         """
         Create a new column and its uncertainty.
@@ -223,7 +228,7 @@ class DataTable():
                 ignore_index=True
             )
 
-    def compute_column(self, col, unit, oper):
+    def compute_column(self, col, oper):
         """
         Create a new column form the others measures.
 
@@ -232,25 +237,26 @@ class DataTable():
         col: Str.
             New column name.
 
-        unit: Str.
-            Unit of the column.
-
         oper: Str.
             Expression in term of the other measures.
 
         """
-        self.add_column(col, unit)
-
         expr = sympify(oper)
 
         vars = []
         cols_args = dict()
+        units_args = dict()
+
+        i = 1
 
         for atom in expr.atoms():
             if atom.is_symbol:
                 vars.append(atom)
 
                 cols_args[atom.name] = self.get_measure(atom.name)
+                units_args[atom.name] = i * self.get_unit(atom.name)
+
+                i += 1
 
         col_func = lambdify(vars, expr, "numpy")
 
@@ -263,12 +269,14 @@ class DataTable():
                 self.get_measure(var.name, True) * expr_diff(**cols_args)
             ) ** 2
 
+        unit = f"{col_func(**units_args).units:~P}"
+
+        self.add_column(col, unit)
+
         self.data[col + "_unc"] = self.round_digits(np.sqrt(col_unc))
         self.data[col] = self.round_unc(
             col_func(**cols_args), np.sqrt(col_unc)
         )
-
-        self.data_units[col] = unit
 
     def compute_avg(self, col):
         """
@@ -295,7 +303,7 @@ class DataTable():
 
         self.singles_units[col + "_avg"] = self.data_units[col]
 
-    def compute_single(self, name, unit, oper):
+    def compute_single(self, name, oper):
         """
         Create a new single form the others measures.
 
@@ -303,9 +311,6 @@ class DataTable():
         ----------
         name: Str.
             New single name.
-
-        unit: Str.
-            Unit of the single.
 
         oper: Str.
             Expression in term of the other measures.
@@ -315,12 +320,18 @@ class DataTable():
 
         vars = []
         sings_args = dict()
+        units_args = dict()
+
+        i = 1
 
         for atom in expr.atoms():
             if atom.is_symbol:
                 vars.append(atom)
 
                 sings_args[atom.name] = self.get_measure(atom.name)
+                units_args[atom.name] = self.get_unit(atom.name)
+
+                i += 1
 
         sing_func = lambdify(vars, expr, "numpy")
 
@@ -337,7 +348,7 @@ class DataTable():
             [sing_func(**sings_args)], [np.sqrt(sing_unc)]
         )[0]
 
-        self.singles_units[name] = unit
+        self.singles_units[name] = f"{sing_func(**units_args).units:~P}"
 
     def linear_fit(self, x_data, y_data):
         """
@@ -469,8 +480,12 @@ class DataTable():
             yerr=self.data[y_col + "_unc"], fmt=".", label="data"
         )
 
-        plt.xlabel(f"{x_col} [{self.get_unit(self.data_units[x_col]):~P}]")
-        plt.ylabel(f"{y_col} [{self.get_unit(self.data_units[y_col]):~P}]")
+        plt.xlabel(
+            f"{x_col} [{self.get_unit(self.data_units[x_col]).units:~P}]"
+        )
+        plt.ylabel(
+            f"{y_col} [{self.get_unit(self.data_units[y_col]).units:~P}]"
+        )
 
         if reg:
             (m, delta_m), (b, delta_b), r = self.reg_func[reg](
@@ -478,9 +493,11 @@ class DataTable():
             )
 
             m_text = f"({m} +- {delta_m})"
-            m_unit = self.get_unit(
-                f"({self.data_units[y_col]})/({self.data_units[x_col]})"
-            )
+            m_unit = (
+                self.get_unit(self.data_units[y_col]) /
+                self.get_unit(self.data_units[x_col])
+            ).units
+
             b_text = f"({b} +- {delta_b})"
             b_unit = self.get_unit(self.data_units[y_col])
 
