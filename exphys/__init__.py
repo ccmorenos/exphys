@@ -524,7 +524,9 @@ class DataTable():
         """Print all the measures."""
         print("Data table:\n")
 
-        header = "\t|\t".join(self.data_units.keys())
+        header = "\t|\t".join([
+           f"{measure} [{unit}]" for measure, unit in self.data_units.items()
+        ])
         print("\t" + header)
         print("-" * (len(header) + 10), end="\n ")
 
@@ -536,11 +538,9 @@ class DataTable():
                 val = self.data[self.data.columns[col_i]][ind]
                 unc = self.data[self.data.columns[col_i + 1]][ind]
 
-                unit = self.data_units[self.data.columns[col_i]]
+                row.append(f"{val} +- {unc}")
 
-                row.append(f"({val} +- {unc}) {unit}")
-
-            print(" | ".join(row), end="\n ")
+            print("\t|\t".join(row), end="\n ")
 
         print("-" * (len(header) + 10))
 
