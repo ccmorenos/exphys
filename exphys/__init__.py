@@ -23,12 +23,14 @@ class DataTable():
 
     # Data Table
     data = pd.DataFrame()
-    data_units = dict()
 
     # Singles.
     singles = dict()
     singles_unc = dict()
-    singles_units = dict()
+
+    # Data properties.
+    measure_units = dict()
+    measure_sigma = dict()
 
     def __init__(self, file=None):
         """Construct the data table."""
@@ -58,10 +60,8 @@ class DataTable():
             Measure or expression of the unit.
 
         """
-        if asked_unit in self.data_units.keys():
-            return self.ureg(self.data_units[asked_unit])
-        elif asked_unit in self.singles_units.keys():
-            return self.ureg(self.singles_units[asked_unit])
+        if asked_unit in self.measure_units.keys():
+            return self.ureg(self.measure_units[asked_unit])
         else:
             return self.ureg(asked_unit)
 
@@ -138,7 +138,7 @@ class DataTable():
 
         return data
 
-    def set_single(self, name, unit, val, unc):
+    def set_single(self, name, unit, val, unc, syst=True):
         """
         Set a single measure.
 
@@ -156,12 +156,20 @@ class DataTable():
         unc: Int, float.
             Uncertainty of the measure.
 
+        syst: Bool.
+            Flag to indicate if the uncertainty is systematic or statistical.
+            Default: True.
+
         """
         self.singles[name] = val
         self.singles_unc[name] = unc
-        self.singles_units[name] = unit
+        self.measure_units[name] = unit
 
-    def add_column(self, col, unit="", full_val=np.nan, full_unc=np.nan):
+        self.measure_sigma[name] = "syst" if syst else "stat"
+
+    def add_column(
+        self, col, unit, syst=True, full_val=np.nan, full_unc=np.nan
+    ):
         """
         Create a new column and its uncertainty.
 
@@ -179,12 +187,18 @@ class DataTable():
         full_unc: int, Float.
             Default value of the column uncertainties.
 
+        syst: Bool.
+            Flag to indicate if the uncertainty is systematic or statistical.
+            Default: True.
+
         """
         if col not in self.data.columns:
             self.data[col] = np.full(len(self.data), full_val)
             self.data[col + "_unc"] = np.full(len(self.data), full_unc)
 
-            self.data_units[col] = unit
+            self.measure_units[col] = unit
+
+            self.measure_sigma[col] = "syst" if syst else "stat"
 
     def new_value(self, col, val, unc, skip=0):
         """
@@ -228,6 +242,46 @@ class DataTable():
                 ignore_index=True
             )
 
+    def compute_unc(self, vars, expr, args):
+        """
+        Compute the uncertainty of a computed quantity.
+
+        Parameters
+        ----------
+        vars: Array of symbols.
+            Variables of the expression.
+
+        expr: Expression.
+            Expression from which extract the uncertainty.
+
+        args: Dictionary.
+            The variables names and the value it takes in the expression.
+
+        Returns
+        -------
+            The sum of statical and systematic uncertainty, as well as a flag
+            that indicates if there is statistical uncertainties in the
+            arguments.
+
+        """
+        unc_stat = 0
+        unc_syst = 0
+
+        is_stat = False
+
+        for var in vars:
+            expr_diff = lambdify(vars, diff(expr, var), "numpy")
+
+            taylor = self.get_measure(var.name, True) * expr_diff(**args)
+
+            if self.measure_sigma[var.name] == "stat":
+                unc_stat += taylor ** 2
+                is_stat = True
+            else:
+                unc_syst += np.abs(taylor)
+
+        return unc_syst + np.sqrt(unc_stat), is_stat
+
     def compute_column(self, col, oper):
         """
         Create a new column form the others measures.
@@ -260,23 +314,16 @@ class DataTable():
 
         col_func = lambdify(vars, expr, "numpy")
 
-        col_unc = 0
-
-        for var in vars:
-            expr_diff = lambdify(vars, diff(expr, var), "numpy")
-
-            col_unc += (
-                self.get_measure(var.name, True) * expr_diff(**cols_args)
-            ) ** 2
+        col_unc, is_stat = self.compute_unc(vars, expr, cols_args)
 
         unit = f"{col_func(**units_args).units:~P}"
 
         self.add_column(col, unit)
 
-        self.data[col + "_unc"] = self.round_digits(np.sqrt(col_unc))
-        self.data[col] = self.round_unc(
-            col_func(**cols_args), np.sqrt(col_unc)
-        )
+        self.data[col + "_unc"] = self.round_digits(col_unc)
+        self.data[col] = self.round_unc(col_func(**cols_args), col_unc)
+
+        self.measure_sigma[col] = "stat" if is_stat else "syst"
 
     def compute_avg(self, col):
         """
@@ -292,7 +339,16 @@ class DataTable():
             self.data[col + "_unc"].notna()
         ]
 
-        sing_unc = np.linalg.norm(not_nan_uncs / len(not_nan_uncs))
+        sing_unc = (
+            (np.max(not_nan_uncs) - np.min(not_nan_uncs)) / 2
+            if len(not_nan_uncs) < 10 else
+            np.sqrt(
+                ((np.mean(not_nan_uncs) - not_nan_uncs) ** 2).sum() /
+                len(not_nan_uncs)
+            )
+        )
+
+        print(sing_unc, len(not_nan_uncs))
 
         self.singles_unc[col + "_avg"] = self.round_digits(
             [sing_unc]
@@ -301,7 +357,9 @@ class DataTable():
             [np.mean(self.data[col])], [np.sqrt(sing_unc)]
         )[0]
 
-        self.singles_units[col + "_avg"] = self.data_units[col]
+        self.measure_units[col + "_avg"] = self.measure_units[col]
+
+        self.measure_sigma[col + "_avg"] = "stat"
 
     def compute_single(self, name, oper):
         """
@@ -329,26 +387,22 @@ class DataTable():
                 vars.append(atom)
 
                 sings_args[atom.name] = self.get_measure(atom.name)
-                units_args[atom.name] = self.get_unit(atom.name)
+                units_args[atom.name] = 1 * self.get_unit(atom.name)
 
                 i += 1
 
         sing_func = lambdify(vars, expr, "numpy")
 
-        sing_unc = 0
+        sing_unc, is_stat = self.compute_unc(vars, expr, sings_args)
 
-        for var in vars:
-            expr_diff = lambdify(vars, diff(expr, var), "numpy")
-            sing_unc += (
-                self.get_measure(var.name, True) * expr_diff(**sings_args)
-            ) ** 2
-
-        self.singles_unc[name] = self.round_digits([np.sqrt(sing_unc)])[0]
+        self.singles_unc[name] = self.round_digits([sing_unc])[0]
         self.singles[name] = self.round_unc(
-            [sing_func(**sings_args)], [np.sqrt(sing_unc)]
+            [sing_func(**sings_args)], [sing_unc]
         )[0]
 
-        self.singles_units[name] = f"{sing_func(**units_args).units:~P}"
+        self.measure_units[name] = f"{sing_func(**units_args).units:~P}"
+
+        self.measure_sigma[name] = "stat" if is_stat else "syst"
 
     def linear_fit(self, x_data, y_data):
         """
@@ -525,7 +579,8 @@ class DataTable():
         print("Data table:\n")
 
         header = "\t|\t".join([
-           f"{measure} [{unit}]" for measure, unit in self.data_units.items()
+           f"{measure} [{unit}]"
+           for measure, unit in self.measure_units.items()
         ])
         print("\t" + header)
         print("-" * (len(header) + 10), end="\n ")
@@ -550,6 +605,6 @@ class DataTable():
             val = self.singles[key]
             unc = self.singles_unc[key]
 
-            unit = self.singles_units[key]
+            unit = self.measure_units[key]
 
             print(f"{key} = ({val} +- {unc}) {unit}")
