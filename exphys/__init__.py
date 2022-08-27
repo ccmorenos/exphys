@@ -23,7 +23,7 @@ class DataTable():
 
     # Data Table
     data = pd.DataFrame()
-    units = dict()
+    data_units = dict()
 
     # Singles.
     singles = dict()
@@ -48,7 +48,7 @@ class DataTable():
             "loglog": lambda x, m, b: np.exp(b) * x**m
         }
 
-    def get_unit(self, expr, format_text=" {}"):
+    def get_unit(self, expr):
         """
         Return the unit of the measure.
 
@@ -58,12 +58,7 @@ class DataTable():
             Exression of the unit.
 
         """
-        unit = self.ureg(expr)
-
-        if unit == self.ureg(""):
-            return " "
-        else:
-            return format_text.format(unit)
+        return self.ureg(expr).units
 
     def round_digits(self, data, dig=1):
         """
@@ -184,7 +179,7 @@ class DataTable():
             self.data[col] = np.full(len(self.data), full_val)
             self.data[col + "_unc"] = np.full(len(self.data), full_unc)
 
-            self.units[col] = unit
+            self.data_units[col] = unit
 
     def new_value(self, col, val, unc, skip=0):
         """
@@ -273,7 +268,7 @@ class DataTable():
             col_func(**cols_args), np.sqrt(col_unc)
         )
 
-        self.units[col] = unit
+        self.data_units[col] = unit
 
     def compute_avg(self, col):
         """
@@ -298,7 +293,7 @@ class DataTable():
             [np.mean(self.data[col])], [np.sqrt(sing_unc)]
         )[0]
 
-        self.singles_units[col + "_avg"] = self.units[col]
+        self.singles_units[col + "_avg"] = self.data_units[col]
 
     def compute_single(self, name, unit, oper):
         """
@@ -474,8 +469,8 @@ class DataTable():
             yerr=self.data[y_col + "_unc"], fmt=".", label="data"
         )
 
-        plt.xlabel(f"{x_col} {self.get_unit(self.units[x_col], '[{}]')}")
-        plt.ylabel(f"{y_col} {self.get_unit(self.units[y_col], '[{}]')}")
+        plt.xlabel(f"{x_col} [{self.get_unit(self.data_units[x_col]):~P}]")
+        plt.ylabel(f"{y_col} [{self.get_unit(self.data_units[y_col]):~P}]")
 
         if reg:
             (m, delta_m), (b, delta_b), r = self.reg_func[reg](
@@ -484,21 +479,21 @@ class DataTable():
 
             m_text = f"({m} +- {delta_m})"
             m_unit = self.get_unit(
-                f"({self.units[y_col]})/({self.units[x_col]})"
+                f"({self.data_units[y_col]})/({self.data_units[x_col]})"
             )
             b_text = f"({b} +- {delta_b})"
-            b_unit = self.get_unit(self.units[y_col])
+            b_unit = self.get_unit(self.data_units[y_col])
 
             reg_data = self.reg_lambda[reg](self.data[x_col], m, b)
 
             if reg == "lin":
-                reg_label = f"{m_text}{m_unit} x + {b_text}{b_unit}"
+                reg_label = f"{m_text}{m_unit:~P} x + {b_text}{b_unit:~P}"
 
             elif reg == "log":
-                reg_label = f"{b_text}{b_unit} e^({m_text}{m_unit} x)"
+                reg_label = f"{b_text}{b_unit:~P} e^({m_text}{m_unit:~P} x)"
 
             elif reg == "loglog":
-                reg_label = f"{b_text}{b_unit} x^({m_text}{m_unit})"
+                reg_label = f"{b_text}{b_unit:~P} x^({m_text}{m_unit:~P})"
 
             plt.plot(self.data[x_col], reg_data, label=reg_label)
             plt.plot([], [], " ", label=f"r = {r}")
@@ -512,7 +507,7 @@ class DataTable():
         """Print all the measures."""
         print("Data table:\n")
 
-        header = "\t|\t".join(self.units.keys())
+        header = "\t|\t".join(self.data_units.keys())
         print("\t" + header)
         print("-" * (len(header) + 10), end="\n ")
 
@@ -524,7 +519,7 @@ class DataTable():
                 val = self.data[self.data.columns[col_i]][ind]
                 unc = self.data[self.data.columns[col_i + 1]][ind]
 
-                unit = self.units[self.data.columns[col_i]]
+                unit = self.data_units[self.data.columns[col_i]]
 
                 row.append(f"({val} +- {unc}) {unit}")
 
