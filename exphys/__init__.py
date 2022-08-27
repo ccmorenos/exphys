@@ -535,10 +535,10 @@ class DataTable():
         )
 
         plt.xlabel(
-            f"{x_col} [{self.get_unit(self.data_units[x_col]).units:~P}]"
+            f"${x_col}$ [{self.get_unit(self.measure_units[x_col]).units:~P}]"
         )
         plt.ylabel(
-            f"{y_col} [{self.get_unit(self.data_units[y_col]).units:~P}]"
+            f"${y_col}$ [{self.get_unit(self.measure_units[y_col]).units:~P}]"
         )
 
         if reg:
@@ -548,25 +548,34 @@ class DataTable():
 
             m_text = f"({m} +- {delta_m})"
             m_unit = (
-                self.get_unit(self.data_units[y_col]) /
-                self.get_unit(self.data_units[x_col])
+                self.get_unit(self.measure_units[y_col]) /
+                self.get_unit(self.measure_units[x_col])
             ).units
 
             b_text = f"({b} +- {delta_b})"
-            b_unit = self.get_unit(self.data_units[y_col])
+            b_unit = self.get_unit(self.measure_units[y_col]).units
 
             reg_data = self.reg_lambda[reg](self.data[x_col], m, b)
 
             if reg == "lin":
-                reg_label = f"{m_text}{m_unit:~P} x + {b_text}{b_unit:~P}"
+                reg_label = (
+                    f"${y_col}$ =  {m_text}{m_unit:~P} ${x_col}$ + "
+                    f"{b_text}{b_unit:~P}"
+                )
 
             elif reg == "log":
-                reg_label = f"{b_text}{b_unit:~P} e^({m_text}{m_unit:~P} x)"
+                reg_label = (
+                    f"${y_col}$ =  {b_text}{b_unit:~P} "
+                    f"e^({m_text}{m_unit:~P} ${x_col}$)"
+                )
 
             elif reg == "loglog":
-                reg_label = f"{b_text}{b_unit:~P} x^({m_text}{m_unit:~P})"
+                reg_label = (
+                    f"${y_col}$ =  {b_text}{b_unit:~P} "
+                    f"${x_col}$^({m_text}{m_unit:~P})"
+                )
 
-            plt.plot(self.data[x_col], reg_data, label=reg_label)
+            plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
             plt.plot([], [], " ", label=f"r = {r}")
 
             plt.legend()
