@@ -48,7 +48,7 @@ class DataTable():
             "loglog": lambda x, m, b: np.exp(b) * x**m
         }
 
-    def get_unit(self, expr, format_text=" {u}"):
+    def get_unit(self, expr, format_text=" {}"):
         """
         Return the unit of the measure.
 
@@ -63,7 +63,7 @@ class DataTable():
         if unit == self.ureg(""):
             return " "
         else:
-            return format_text.format(u=unit)
+            return format_text.format(unit)
 
     def round_digits(self, data, dig=1):
         """
