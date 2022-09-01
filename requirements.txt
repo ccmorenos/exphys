@@ -1,0 +1,5 @@
+matplotlib==3.5.2
+numpy==1.23.1
+pandas==1.4.0
+pint==0.19.2
+sympy==1.11
