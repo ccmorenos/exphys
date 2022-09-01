@@ -138,6 +138,21 @@ class DataTable():
 
         return data
 
+    def paren_unc(self, unc):
+        """
+        Int of the uncertainty.
+
+        Parameters
+        ----------
+        unc: Array.
+            Uncertainties that indicates the number of digits.
+
+        """
+        if not np.isnan(unc):
+            return int(unc / 10**int(np.floor(np.log10(unc))))
+        else:
+            return unc
+
     def set_single(self, name, unit, val, unc, syst=True):
         """
         Set a single measure.
@@ -596,7 +611,7 @@ class DataTable():
         """Print all the measures."""
         print("Data table:\n")
 
-        header = "|   i   |"
+        header = "|   \\   |"
 
         for measure, unit in self.measure_units.items():
             if measure in list(self.data.columns):
@@ -612,9 +627,11 @@ class DataTable():
 
             for col_i in range(0, len(self.data.columns), 2):
                 val = self.data[self.data.columns[col_i]][ind]
-                unc = self.data[self.data.columns[col_i + 1]][ind]
+                unc = self.paren_unc(
+                    self.data[self.data.columns[col_i + 1]][ind]
+                )
 
-                row += self.make_cell(f"{val} +- {unc}")
+                row += self.make_cell(f"{val}({unc})")
 
             print(row)
 
@@ -624,8 +641,8 @@ class DataTable():
 
         for key in self.singles:
             val = self.singles[key]
-            unc = self.singles_unc[key]
+            unc = self.paren_unc(self.singles_unc[key])
 
             unit = self.measure_units[key]
 
-            print(f"{key} = ({val} +- {unc}) {unit}")
+            print(f"{key} = {val}({unc}) {unit}")
