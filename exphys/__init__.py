@@ -559,20 +559,20 @@ class DataTable():
 
             if reg == "lin":
                 reg_label = (
-                    f"${y_col}$ =  {m_text}{m_unit:~P} ${x_col}$ + "
-                    f"{b_text}{b_unit:~P}"
+                    f"${y_col}$ = {m_text} {m_unit:~P} ${x_col}$ + "
+                    f"{b_text} {b_unit:~P}"
                 )
 
             elif reg == "log":
                 reg_label = (
-                    f"${y_col}$ =  {b_text}{b_unit:~P} "
-                    f"e^({m_text}{m_unit:~P} ${x_col}$)"
+                    f"${y_col}$ = {b_text} {b_unit:~P} "
+                    f"e^({m_text} {m_unit:~P} ${x_col}$)"
                 )
 
             elif reg == "loglog":
                 reg_label = (
-                    f"${y_col}$ =  {b_text}{b_unit:~P} "
-                    f"${x_col}$^({m_text}{m_unit:~P})"
+                    f"${y_col}$ = {b_text} {b_unit:~P} "
+                    f"${x_col}$^({m_text} {m_unit:~P})"
                 )
 
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
@@ -583,30 +583,42 @@ class DataTable():
         if show:
             plt.show()
 
+    def make_cell(self, content, cell_size=20):
+        """Return a string with a cell."""
+        space = cell_size - len(content)
+
+        before_spc = " " * int(abs(np.ceil(space/2)))
+        after_spc = " " * int(abs(np.floor(space/2)))
+
+        return before_spc + content + after_spc + "|"
+
     def print(self):
         """Print all the measures."""
         print("Data table:\n")
 
-        header = "\t|\t".join([
-           f"{measure} [{unit}]"
-           for measure, unit in self.measure_units.items()
-        ])
-        print("\t" + header)
-        print("-" * (len(header) + 10), end="\n ")
+        header = "|   i   |"
+
+        for measure, unit in self.measure_units.items():
+            if measure in list(self.data.columns):
+                header += self.make_cell(f"{measure} [{unit}]")
+
+        print("-" * len(header))
+        print(header)
+        print("-" * len(header))
 
         for ind in self.data.index:
 
-            row = []
+            row = "|" + self.make_cell(f"{ind}", 7)
 
             for col_i in range(0, len(self.data.columns), 2):
                 val = self.data[self.data.columns[col_i]][ind]
                 unc = self.data[self.data.columns[col_i + 1]][ind]
 
-                row.append(f"{val} +- {unc}")
+                row += self.make_cell(f"{val} +- {unc}")
 
-            print("\t|\t".join(row), end="\n ")
+            print(row)
 
-        print("-" * (len(header) + 10))
+        print("-" * len(header))
 
         print("\nSingle measures:\n")
 
