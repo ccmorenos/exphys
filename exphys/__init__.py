@@ -424,6 +424,48 @@ class DataTable():
 
         self.measure_sigma[name] = "stat" if is_stat else "syst"
 
+    def regression_singles(self, x_col, y_col, reg, m_name=None, b_name=None):
+        """
+        Create a new single form a regression.
+
+        Parameters
+        ----------
+        x_col: Str.
+            Variable to plot in the x axis.
+
+        y_col: Str.
+            Variable to plot in the y axis.
+
+        reg: Str, None.
+            Run a regression over the data. The options are lin for linear, log
+            for semi-logarithmic and loglog for logarithmic regression. If
+            None, no regression is run.
+
+        m_name: Str, None.
+            Name of the variable of the slope. If None, the variable is no
+            saved.
+
+        b_name: Str, None.
+            Name of the variable of the intercept. If None, the variable is no
+            saved.
+
+        """
+        (m, delta_m), (b, delta_b), r = self.reg_func[reg](
+            self.data[x_col], self.data[y_col]
+        )
+
+        m_unit = (
+            self.get_unit(self.measure_units[y_col]) /
+            self.get_unit(self.measure_units[x_col])
+        ).units
+
+        b_unit = self.get_unit(self.measure_units[y_col]).units
+
+        if m_name:
+            self.set_single(m_name, f"{m_unit}", m, delta_m, syst=False)
+        if b_name:
+            self.set_single(b_name, f"{b_unit}", b, delta_b, syst=False)
+
     def linear_fit(self, x_data, y_data):
         """
         Fit a linear regression to a set of data.
@@ -526,7 +568,7 @@ class DataTable():
         """
         return self.linear_fit(np.log(x_data), np.log(y_data))
 
-    def plot(self, x_col, y_col, reg=None, show=False):
+    def plot(self, x_col, y_col, reg=None, show=False, **kwargs):
         """
         Plot two columns.
 
@@ -546,7 +588,19 @@ class DataTable():
         show: Bool.
             Flag that indicates whether to show or not the plot.
 
+        **kwargs:
+            x_label: Str.
+                Name of the variable in the x axis, if no label is passed, the
+                name of the column will be used.
+
+            y_label: Str.
+                Name of the variable in the y axis, if no label is passed, the
+                name of the column will be used.
+
         """
+        x_label = kwargs.get("x_label", x_col)
+        y_label = kwargs.get("y_label", y_col)
+
         plt.errorbar(
             self.data[x_col],
             self.data[y_col],
@@ -555,10 +609,12 @@ class DataTable():
         )
 
         plt.xlabel(
-            f"${x_col}$ [{self.get_unit(self.measure_units[x_col]).units:~P}]"
+            x_label +
+            f" [{self.get_unit(self.measure_units[x_col]).units:~P}]"
         )
         plt.ylabel(
-            f"${y_col}$ [{self.get_unit(self.measure_units[y_col]).units:~P}]"
+            y_label +
+            f" [{self.get_unit(self.measure_units[y_col]).units:~P}]"
         )
 
         if reg:
