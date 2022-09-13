@@ -149,9 +149,14 @@ class DataTable():
 
         """
         if not np.isnan(unc):
-            return int(unc / 10**int(np.floor(np.log10(unc))))
+            dig = int(np.floor(np.log10(unc)))
+
+            new_unc = int(unc / 10**dig) if -dig >= 0 else int(unc)
+
+            return new_unc, -dig
+
         else:
-            return unc
+            return (unc, 1)
 
     def set_single(self, name, unit, val, unc, syst=True):
         """
@@ -627,11 +632,11 @@ class DataTable():
 
             for col_i in range(0, len(self.data.columns), 2):
                 val = self.data[self.data.columns[col_i]][ind]
-                unc = self.paren_unc(
+                unc, dig = self.paren_unc(
                     self.data[self.data.columns[col_i + 1]][ind]
                 )
 
-                row += self.make_cell(f"{val}({unc})")
+                row += self.make_cell(f"%.{max(0, dig)}f({unc})" % val)
 
             print(row)
 
@@ -641,8 +646,8 @@ class DataTable():
 
         for key in self.singles:
             val = self.singles[key]
-            unc = self.paren_unc(self.singles_unc[key])
+            unc, dig = self.paren_unc(self.singles_unc[key])
 
             unit = self.measure_units[key]
 
-            print(f"{key} = {val}({unc}) {unit}")
+            print(f"{key} = %.{dig}f({unc}) {unit}" % val)
