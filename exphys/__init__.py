@@ -4,6 +4,7 @@ import numpy as np
 from sympy import sympify, lambdify, diff
 import matplotlib.pyplot as plt
 from pint import UnitRegistry
+from pint.formatting import formatter
 
 
 class DataTable():
@@ -17,6 +18,24 @@ class DataTable():
         None.
 
     """
+
+    _GRAPH_FORMAT = {
+        "as_ratio": False,
+        "single_denominator": True,
+        "product_fmt": r" ",
+        "power_fmt": "{}$^[{}]$",
+        "division_fmt": r"{}/{}",
+        "parentheses_fmt": r"\left({}\right)",
+    }
+
+    _CONSOLE_FORMAT = {
+        "as_ratio": True,
+        "single_denominator": False,
+        "product_fmt": r" ",
+        "power_fmt": "{}^[{}]",
+        "division_fmt": r"{}/{}",
+        "parentheses_fmt": r"\left({}\right)",
+    }
 
     # Units manage.
     ureg = UnitRegistry()
@@ -49,6 +68,59 @@ class DataTable():
             "log": lambda x, m, b: np.exp(b+x*m),
             "loglog": lambda x, m, b: np.exp(b) * x**m
         }
+
+    def format_unit(self, unit, FORMAT):
+        """
+        Format the unit with the format defined.
+
+        Parameters
+        ----------
+        unit: Str.
+            Unit to be formatted.
+
+        FORMAT: Dict.
+            Format to use
+
+        """
+        abbrv_units = [
+            [self.ureg.get_symbol(k), v] for k, v in unit.units._units.items()
+        ]
+
+        return formatter(
+            abbrv_units, **FORMAT
+        ).replace("[", "{").replace("]", "}")
+
+    def console_unit(self, unit):
+        """
+        Format the unit with the format for console output.
+
+        Parameters
+        ----------
+        unit: Str.
+            Unit to be formatted.
+
+        """
+        return self.format_unit(unit, self._CONSOLE_FORMAT)
+
+    def graph_unit(self, unit, par=False):
+        """
+        Format the unit with the format for graphs.
+
+        Parameters
+        ----------
+        unit: Str.
+            Unit to be formatted.
+
+        par: Bool.
+            Flag that specify whether return the unit in parenthesis or not.
+
+        """
+        g_unit = self.format_unit(unit, self._GRAPH_FORMAT)
+
+        if par:
+            return " (" + g_unit + ")"
+        else:
+            return g_unit
 
     def get_unit(self, asked_unit):
         """
@@ -336,7 +408,7 @@ class DataTable():
 
         col_unc, is_stat = self.compute_unc(vars, expr, cols_args)
 
-        unit = f"{col_func(**units_args).units:~P}"
+        unit = f"{col_func(**units_args)}"
 
         self.add_column(col, unit)
 
@@ -420,7 +492,7 @@ class DataTable():
             [sing_func(**sings_args)], [sing_unc]
         )[0]
 
-        self.measure_units[name] = f"{sing_func(**units_args).units:~P}"
+        self.measure_units[name] = f"{sing_func(**units_args)}"
 
         self.measure_sigma[name] = "stat" if is_stat else "syst"
 
@@ -608,47 +680,44 @@ class DataTable():
             yerr=self.data[y_col + "_unc"], fmt=".", label="data"
         )
 
-        plt.xlabel(
-            x_label +
-            f" [{self.get_unit(self.measure_units[x_col]).units:~P}]"
-        )
-        plt.ylabel(
-            y_label +
-            f" [{self.get_unit(self.measure_units[y_col]).units:~P}]"
-        )
+        x_unit = self.get_unit(self.measure_units[x_col])
+        plt.xlabel(("$%s$" % x_label) + self.graph_unit(x_unit, True))
+
+        y_unit = self.get_unit(self.measure_units[y_col])
+        plt.ylabel(("$%s$" % y_label) + self.graph_unit(y_unit, True))
 
         if reg:
             (m, delta_m), (b, delta_b), r = self.reg_func[reg](
                 self.data[x_col], self.data[y_col]
             )
 
-            m_text = f"({m} +- {delta_m})"
-            m_unit = (
+            m_text = f"{m} +- {delta_m}"
+            m_unit = self.graph_unit(
                 self.get_unit(self.measure_units[y_col]) /
                 self.get_unit(self.measure_units[x_col])
-            ).units
+            )
 
-            b_text = f"({b} +- {delta_b})"
-            b_unit = self.get_unit(self.measure_units[y_col]).units
+            b_text = f"{b} +- {delta_b}"
+            b_unit = self.graph_unit(self.get_unit(self.measure_units[y_col]))
 
             reg_data = self.reg_lambda[reg](self.data[x_col], m, b)
 
             if reg == "lin":
                 reg_label = (
-                    f"${y_col}$ = {m_text} {m_unit:~P} ${x_col}$ + "
-                    f"{b_text} {b_unit:~P}"
+                    f"${y_col}$ = {m_text} " + m_unit +
+                    f" ${x_col}$ + {b_text} " + b_unit
                 )
 
             elif reg == "log":
                 reg_label = (
-                    f"${y_col}$ = {b_text} {b_unit:~P} "
-                    f"e^({m_text} {m_unit:~P} ${x_col}$)"
+                    f"${y_col}$ = {b_text} " + b_unit +
+                    f" e^({m_text} " + m_unit + " ${x_col}$)"
                 )
 
             elif reg == "loglog":
                 reg_label = (
-                    f"${y_col}$ = {b_text} {b_unit:~P} "
-                    f"${x_col}$^({m_text} {m_unit:~P})"
+                    f"${y_col}$ = {b_text}" + b_unit +
+                    f" ${x_col}$^({m_text} " + m_unit + ")"
                 )
 
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
@@ -676,7 +745,9 @@ class DataTable():
 
         for measure, unit in self.measure_units.items():
             if measure in list(self.data.columns):
-                header += self.make_cell(f"{measure} [{unit}]")
+                col_unit = self.console_unit(self.get_unit(unit))
+
+                header += self.make_cell(f"{measure} [{col_unit}]")
 
         print("-" * len(header))
         print(header)
@@ -704,6 +775,6 @@ class DataTable():
             val = self.singles[key]
             unc, dig = self.paren_unc(self.singles_unc[key])
 
-            unit = self.measure_units[key]
+            unit = self.console_unit(self.get_unit(self.measure_units[key]))
 
             print(f"{key} = %.{dig}f({unc}) {unit}" % val)
