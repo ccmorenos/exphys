@@ -728,6 +728,44 @@ class DataTable():
         if show:
             plt.show()
 
+    def hist(self, x_col, n, show=False, **kwargs):
+        """
+        Plot two columns.
+
+        Parameters
+        ----------
+        x_col: Str.
+            Variable to plot in the x axis.
+
+        n: Int.
+            Number of bins in the histogram.
+
+        show: Bool.
+            Flag that indicates whether to show or not the plot.
+
+        **kwargs:
+            x_label: Str.
+                Name of the variable in the x axis, if no label is passed, the
+                name of the column will be used.
+
+            y_label: Str.
+                Name of the variable in the y axis, if no label is passed, the
+                name of the column will be used.
+
+        """
+        x_label = kwargs.get("x_label", x_col)
+        y_label = kwargs.get("y_label", "Events")
+
+        plt.hist(self.data[x_col], n, label="data")
+
+        x_unit = self.get_unit(self.measure_units[x_col])
+        plt.xlabel(("$%s$" % x_label) + self.graph_unit(x_unit, True))
+
+        plt.ylabel(("$%s$ (1/[" % y_label) + self.graph_unit(x_unit) + "])")
+
+        if show:
+            plt.show()
+
     def make_cell(self, content, cell_size=20):
         """Return a string with a cell."""
         space = cell_size - len(content)
