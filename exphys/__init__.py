@@ -199,8 +199,9 @@ class DataTable():
 
         """
         for i in range(len(data)):
+
             if not np.isnan(data[i]) and not np.isnan(unc[i]):
-                if data[i] == 0:
+                if data[i] == 0 or unc[i] == 0:
                     continue
 
                 data[i] = np.round(
@@ -220,7 +221,7 @@ class DataTable():
             Uncertainties that indicates the number of digits.
 
         """
-        if not np.isnan(unc):
+        if not np.isnan(unc) and unc != 0:
             dig = int(np.floor(np.log10(unc)))
 
             new_unc = int(unc / 10**dig) if -dig >= 0 else int(unc)
@@ -361,10 +362,14 @@ class DataTable():
 
         is_stat = False
 
+        max_unc = self.get_measure(vars[0].name, True)
+
         for var in vars:
             expr_diff = lambdify(vars, diff(expr, var), "numpy")
 
             taylor = self.get_measure(var.name, True) * expr_diff(**args)
+
+            max_unc = np.max(self.get_measure(var.name, True))
 
             if self.measure_sigma[var.name] == "stat":
                 unc_stat += taylor ** 2
@@ -372,7 +377,13 @@ class DataTable():
             else:
                 unc_syst += np.abs(taylor)
 
-        return unc_syst + np.sqrt(unc_stat), is_stat
+        total_unc = unc_syst + np.sqrt(unc_stat)
+
+        for i in range(len(total_unc)):
+            if total_unc[i] == 0.0:
+                total_unc[i] = max_unc
+
+        return total_unc, is_stat
 
     def compute_column(self, col, oper):
         """
