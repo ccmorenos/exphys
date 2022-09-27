@@ -451,8 +451,6 @@ class DataTable():
             )
         )
 
-        print(sing_unc, len(not_nan_uncs))
-
         self.singles_unc[col + "_avg"] = self.round_digits(
             [sing_unc]
         )[0]
