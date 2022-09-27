@@ -649,7 +649,10 @@ class DataTable():
         """
         return self.linear_fit(np.log(x_data), np.log(y_data))
 
-    def plot(self, x_col, y_col, reg=None, show=False, **kwargs):
+    def plot(
+        self, x_col, y_col, *y_cols,
+        reg=None, show=False, legend=False, **kwargs
+    ):
         """
         Plot two columns.
 
@@ -682,12 +685,23 @@ class DataTable():
         x_label = kwargs.get("x_label", x_col)
         y_label = kwargs.get("y_label", y_col)
 
+        y_legend = kwargs.get("y_legend", "data")
+        y_legends = kwargs.get("y_legends", "data")
+
         plt.errorbar(
             self.data[x_col],
             self.data[y_col],
             xerr=self.data[x_col + "_unc"],
-            yerr=self.data[y_col + "_unc"], fmt=".", label="data"
+            yerr=self.data[y_col + "_unc"], fmt=".", label=y_legend
         )
+
+        for y_col_, y_legend_ in zip(y_cols, y_legends):
+            plt.errorbar(
+                self.data[x_col],
+                self.data[y_col_],
+                xerr=self.data[x_col + "_unc"],
+                yerr=self.data[y_col_ + "_unc"], fmt=".", label=y_legend_
+            )
 
         x_unit = self.get_unit(self.measure_units[x_col])
         plt.xlabel(("$%s$" % x_label) + self.graph_unit(x_unit, True))
@@ -732,6 +746,7 @@ class DataTable():
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
             plt.plot([], [], " ", label=f"r = {r}")
 
+        if legend:
             plt.legend()
 
         if show:
