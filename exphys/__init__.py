@@ -462,6 +462,37 @@ class DataTable():
 
         self.measure_sigma[col + "_avg"] = "stat"
 
+    def compute_cols_err(self, col_name, *, col1, col2=None, ref=None):
+        """
+        Create a new single with the average of a column.
+
+        Parameters
+        ----------
+        col: Str.
+            New column name.
+
+        """
+        self.add_column(col_name, "")
+
+        data_col1 = self.data[col1]
+
+        if ref is not None:
+            data_ref = self.get_measure(ref)
+
+            self.data[col_name + "_unc"] = 0.001
+            self.data[col_name] = abs((data_col1 - data_ref) / data_ref)
+
+        elif col2 is not None:
+            data_col2 = self.data[col2]
+
+            self.data[col_name + "_unc"] = 0.001
+
+            self.data[col_name] = abs(
+                (data_col1 - data_col2 * 2) / (data_col1 + data_col2)
+            )
+
+        self.measure_sigma[col_name] = "syst"
+
     def compute_single(self, name, oper):
         """
         Create a new single form the others measures.
