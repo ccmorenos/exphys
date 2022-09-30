@@ -746,11 +746,13 @@ class DataTable():
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
             plt.plot([], [], " ", label=f"r = {r}")
 
-        if legend:
+        if legend or reg is not None:
             plt.legend()
 
         if show:
             plt.show()
+
+        plt.clf()
 
     def hist(self, x_col, n, show=False, **kwargs):
         """
