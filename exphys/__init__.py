@@ -767,12 +767,15 @@ class DataTable():
                     f"${y_label}$ = {b_text} " + b_unit +
                     f" e^({m_text} " + m_unit + f" ${x_label}$)"
                 )
+                plt.yscale("log")
 
             elif reg == "loglog":
                 reg_label = (
                     f"${y_label}$ = {b_text}" + b_unit +
                     f" ${x_label}$^({m_text} " + m_unit + ")"
                 )
+                plt.yscale("log")
+                plt.xscale("log")
 
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
             plt.plot([], [], " ", label=f"r = {r}")
