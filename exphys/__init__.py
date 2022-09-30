@@ -335,13 +335,13 @@ class DataTable():
                 ignore_index=True
             )
 
-    def compute_unc(self, vars, expr, args):
+    def compute_unc(self, vars_vals, expr, args, uncs_pos, uncs_neg):
         """
         Compute the uncertainty of a computed quantity.
 
         Parameters
         ----------
-        vars: Array of symbols.
+        vars_vals: Array of symbols.
             Variables of the expression.
 
         expr: Expression.
@@ -349,6 +349,12 @@ class DataTable():
 
         args: Dictionary.
             The variables names and the value it takes in the expression.
+
+        uncs_pos: Dictionary.
+            Variable+ uncertainty.
+
+        uncs_neg: Dictionary.
+            Variable - uncertainty.
 
         Returns
         -------
@@ -362,14 +368,23 @@ class DataTable():
 
         is_stat = False
 
-        max_unc = self.get_measure(vars[0].name, True)
+        exp_func = lambdify(vars_vals, expr, "numpy")
 
-        for var in vars:
-            expr_diff = lambdify(vars, diff(expr, var), "numpy")
+        max_unc = self.get_measure(vars_vals[0].name, True)
+
+        for var in vars_vals:
+            expr_diff = lambdify(vars_vals, diff(expr, var), "numpy")
 
             taylor = self.get_measure(var.name, True) * expr_diff(**args)
 
-            max_unc = np.max(self.get_measure(var.name, True))
+            print([
+                np.abs(exp_func(**args) - exp_func(**uncs_pos)),
+                np.abs(exp_func(**args) - exp_func(**uncs_neg))
+            ])
+            max_unc = np.max([
+                np.abs(exp_func(**args) - exp_func(**uncs_pos)),
+                np.abs(exp_func(**args) - exp_func(**uncs_neg))
+            ])
 
             if self.measure_sigma[var.name] == "stat":
                 unc_stat += taylor ** 2
@@ -378,10 +393,14 @@ class DataTable():
                 unc_syst += np.abs(taylor)
 
         total_unc = unc_syst + np.sqrt(unc_stat)
+        try:
+            for i in range(len(total_unc)):
+                if total_unc[i] == 0.0:
+                    total_unc[i] = max_unc
 
-        for i in range(len(total_unc)):
-            if total_unc[i] == 0.0:
-                total_unc[i] = max_unc
+        except TypeError:
+            if total_unc == 0.0:
+                total_unc = max_unc
 
         return total_unc, is_stat
 
@@ -400,31 +419,44 @@ class DataTable():
         """
         expr = sympify(oper)
 
-        vars = []
+        vars_vals = []
         cols_args = dict()
+        unc_args_pos = dict()
+        unc_args_neg = dict()
         units_args = dict()
 
         i = 1
 
         for atom in expr.atoms():
             if atom.is_symbol:
-                vars.append(atom)
+                vars_vals.append(atom)
 
                 cols_args[atom.name] = self.get_measure(atom.name)
+                unc_args_pos[atom.name] = (
+                    self.get_measure(atom.name) +
+                    self.get_measure(atom.name, True)
+                )
+                unc_args_neg[atom.name] = (
+                    self.get_measure(atom.name) -
+                    self.get_measure(atom.name, True)
+                )
                 units_args[atom.name] = i * self.get_unit(atom.name)
 
                 i += 1
 
-        col_func = lambdify(vars, expr, "numpy")
+        col_func = lambdify(vars_vals, expr, "numpy")
 
-        col_unc, is_stat = self.compute_unc(vars, expr, cols_args)
+        col_unc, is_stat = self.compute_unc(
+            vars_vals, expr, cols_args, unc_args_pos, unc_args_neg
+        )
 
         unit = f"{col_func(**units_args)}"
 
         self.add_column(col, unit)
 
         self.data[col + "_unc"] = self.round_digits(col_unc)
-        self.data[col] = self.round_unc(col_func(**cols_args), col_unc)
+        # self.data[col] = self.round_unc(col_func(**cols_args), col_unc)
+        self.data[col] = col_func(**cols_args)
 
         self.measure_sigma[col] = "stat" if is_stat else "syst"
 
@@ -508,24 +540,36 @@ class DataTable():
         """
         expr = sympify(oper)
 
-        vars = []
+        vars_vals = []
         sings_args = dict()
+        unc_args_pos = dict()
+        unc_args_neg = dict()
         units_args = dict()
 
         i = 1
 
         for atom in expr.atoms():
             if atom.is_symbol:
-                vars.append(atom)
+                vars_vals.append(atom)
 
                 sings_args[atom.name] = self.get_measure(atom.name)
+                unc_args_pos[atom.name] = (
+                    self.get_measure(atom.name) +
+                    self.get_measure(atom.name, True)
+                )
+                unc_args_neg[atom.name] = (
+                    self.get_measure(atom.name) -
+                    self.get_measure(atom.name, True)
+                )
                 units_args[atom.name] = 1 * self.get_unit(atom.name)
 
                 i += 1
 
-        sing_func = lambdify(vars, expr, "numpy")
+        sing_func = lambdify(vars_vals, expr, "numpy")
 
-        sing_unc, is_stat = self.compute_unc(vars, expr, sings_args)
+        sing_unc, is_stat = self.compute_unc(
+            vars_vals, expr, sings_args, unc_args_pos, unc_args_neg
+        )
 
         self.singles_unc[name] = self.round_digits([sing_unc])[0]
         self.singles[name] = self.round_unc(
