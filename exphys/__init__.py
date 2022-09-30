@@ -727,20 +727,20 @@ class DataTable():
 
             if reg == "lin":
                 reg_label = (
-                    f"${y_col}$ = {m_text} " + m_unit +
-                    f" ${x_col}$ + {b_text} " + b_unit
+                    f"${y_label}$ = {m_text} " + m_unit +
+                    f" ${x_label}$ + {b_text} " + b_unit
                 )
 
             elif reg == "log":
                 reg_label = (
-                    f"${y_col}$ = {b_text} " + b_unit +
-                    f" e^({m_text} " + m_unit + " ${x_col}$)"
+                    f"${y_label}$ = {b_text} " + b_unit +
+                    f" e^({m_text} " + m_unit + f" ${x_label}$)"
                 )
 
             elif reg == "loglog":
                 reg_label = (
-                    f"${y_col}$ = {b_text}" + b_unit +
-                    f" ${x_col}$^({m_text} " + m_unit + ")"
+                    f"${y_label}$ = {b_text}" + b_unit +
+                    f" ${x_label}$^({m_text} " + m_unit + ")"
                 )
 
             plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
