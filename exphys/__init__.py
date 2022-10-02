@@ -557,7 +557,7 @@ class DataTable():
                     self.get_measure(atom.name) -
                     self.get_measure(atom.name, True)
                 )
-                units_args[atom.name] = 1 * self.get_unit(atom.name)
+                units_args[atom.name] = i * self.get_unit(atom.name)
 
                 i += 1
 
