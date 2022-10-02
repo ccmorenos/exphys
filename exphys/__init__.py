@@ -377,10 +377,6 @@ class DataTable():
 
             taylor = self.get_measure(var.name, True) * expr_diff(**args)
 
-            print([
-                np.abs(exp_func(**args) - exp_func(**uncs_pos)),
-                np.abs(exp_func(**args) - exp_func(**uncs_neg))
-            ])
             max_unc = np.max([
                 np.abs(exp_func(**args) - exp_func(**uncs_pos)),
                 np.abs(exp_func(**args) - exp_func(**uncs_neg))
