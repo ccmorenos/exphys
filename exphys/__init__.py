@@ -5,6 +5,7 @@ from sympy import sympify, lambdify, diff
 import matplotlib.pyplot as plt
 from pint import UnitRegistry
 from pint.formatting import formatter
+import json
 
 
 class DataTable():
@@ -719,6 +720,42 @@ class DataTable():
 
         """
         return self.linear_fit(np.log(x_data), np.log(y_data))
+
+    def save_data(self, label, sep=",", index=False):
+        """
+        Save the DataTable in a csv file.
+
+        Parameters
+        ----------
+        label: Str.
+            Label for the csv file and the json file.
+
+        sep: Str.
+            Separator for the csv file. Default ','.
+
+        index: Bool.
+            Flag of wether save or not the index in the csv file.
+
+        """
+        self.data.to_csv(f"{label}_data_table.csv", sep=sep, index=index)
+
+        json_dict = dict()
+
+        for key in self.singles:
+            val = self.singles[key]
+            unc, dig = self.paren_unc(self.singles_unc[key])
+
+            unit = self.console_unit(self.get_unit(self.measure_units[key]))
+
+            json_dict[key] = {
+                "val": val,
+                "unc": 10**-dig * unc,
+                "unit": unit
+            }
+
+        with open(f"{label}_singles.json", "w") as json_file:
+            json_file.write(json.dumps(json_dict, indent=4))
+            json_file.close()
 
     def plot(
         self, x_col, y_col, *y_cols,
