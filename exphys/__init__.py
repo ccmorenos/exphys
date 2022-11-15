@@ -324,7 +324,9 @@ class DataTable():
                 entry_index + 1 + skip < len(self.data)
             )
         ):
-            entry_index = 0 if entry_index is None else entry_index + 1 + skip
+            entry_index = (
+                0 + skip if entry_index is None else entry_index + 1 + skip
+            )
 
             self.data[col].iloc[entry_index] = val
             self.data[col + "_unc"].iloc[entry_index] = unc
