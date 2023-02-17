@@ -5,6 +5,7 @@ from sympy import sympify, lambdify, diff
 import matplotlib.pyplot as plt
 from pint import UnitRegistry
 from pint.formatting import formatter
+from scipy.optimize import curve_fit
 import json
 
 
@@ -52,6 +53,9 @@ class DataTable():
     measure_units = dict()
     measure_sigma = dict()
 
+    # Figure.
+    fig = plt.figure()
+
     def __init__(self, file=None):
         """Construct the data table."""
         if file:
@@ -65,9 +69,9 @@ class DataTable():
         }
 
         self.reg_lambda = {
-            "lin": lambda x, m, b: m*x + b,
-            "log": lambda x, m, b: np.exp(b+x*m),
-            "loglog": lambda x, m, b: np.exp(b) * x**m
+            "lin": lambda x, a_0, a_1: a_0 + a_1*x,
+            "log": lambda x, a_0, a_1: a_0 * np.exp(a_1*x),
+            "loglog": lambda x, a_0, a_1: a_0 * x**a_1
         }
 
     def format_unit(self, unit, FORMAT):
@@ -177,6 +181,9 @@ class DataTable():
         for i in range(len(data)):
             if not np.isnan(data[i]):
                 if data[i] == 0:
+                    continue
+                elif data[i] == np.inf:
+                    data[i] = 0
                     continue
 
                 data[i] = np.round(
@@ -424,7 +431,7 @@ class DataTable():
         unc_args_neg = dict()
         units_args = dict()
 
-        i = 1
+        i = 2
 
         for atom in expr.atoms():
             if atom.is_symbol:
@@ -495,7 +502,7 @@ class DataTable():
 
     def compute_cols_err(self, col_name, *, col1, col2=None, ref=None):
         """
-        Create a new single with the average of a column.
+        Compute the error of two columns.
 
         Parameters
         ----------
@@ -524,6 +531,38 @@ class DataTable():
 
         self.measure_sigma[col_name] = "syst"
 
+    def compute_singles_err(self, sing_name, *, sing1, sing2=None, ref=None):
+        """
+        Compute the error of two singles.
+
+        Parameters
+        ----------
+        sing: Str.
+            New column name.
+
+        """
+        data_sing1 = self.singles[sing1]
+
+        self.measure_units[sing_name] = ""
+
+        if ref is not None:
+            data_ref = self.get_measure(ref)
+
+            self.singles_unc[sing_name] = 0.0001
+            self.singles[sing_name] = abs((data_sing1 - data_ref) / data_ref)
+            print(data_sing1, data_ref)
+
+        elif sing2 is not None:
+            data_sing2 = self.singles[sing2]
+
+            self.singles_unc[sing_name] = 0.0001
+
+            self.singles[sing_name] = abs(
+                (data_sing1 - data_sing2 * 2) / (data_sing1 + data_sing2)
+            )
+
+        self.measure_sigma[sing_name] = "syst"
+
     def compute_single(self, name, oper):
         """
         Create a new single form the others measures.
@@ -545,7 +584,7 @@ class DataTable():
         unc_args_neg = dict()
         units_args = dict()
 
-        i = 1
+        i = 2
 
         for atom in expr.atoms():
             if atom.is_symbol:
@@ -560,9 +599,10 @@ class DataTable():
                     self.get_measure(atom.name) -
                     self.get_measure(atom.name, True)
                 )
+
                 units_args[atom.name] = i * self.get_unit(atom.name)
 
-                i += 1
+                i += 1.
 
         sing_func = lambdify(vars_vals, expr, "numpy")
 
@@ -579,7 +619,11 @@ class DataTable():
 
         self.measure_sigma[name] = "stat" if is_stat else "syst"
 
-    def regression_singles(self, x_col, y_col, reg, m_name=None, b_name=None):
+    def regression_singles(
+        self, x_col, y_col, reg, y_sigma=True,
+        a_1_name=None, a_0_name=None,
+        a_1_unit="", a_0_unit="", p0=None
+    ):
         """
         Create a new single form a regression.
 
@@ -596,47 +640,88 @@ class DataTable():
             for semi-logarithmic and loglog for logarithmic regression. If
             None, no regression is run.
 
-        m_name: Str, None.
+        y_sigma: Bool.
+            Flag that indicates whether use or not uncertainties in the fit.
+
+        a_1_name: Str, None.
             Name of the variable of the slope. If None, the variable is no
             saved.
 
-        b_name: Str, None.
+        a_0_name: Str, None.
             Name of the variable of the intercept. If None, the variable is no
             saved.
 
         """
-        (m, delta_m), (b, delta_b), r = self.reg_func[reg](
-            self.data[x_col], self.data[y_col]
-        )
+        if reg in self.reg_func.keys():
+            (a_1, delta_a_1), (a_0, delta_a_0), r = self.reg_func[reg](
+                self.data[x_col], self.data[y_col],
+                self.data[y_col+"_unc"] if y_sigma else None, p0=p0
+            )
+        else:
+            (a_1, delta_a_1), (a_0, delta_a_0), r = self.function_fit(
+                reg,
+                self.data[x_col], self.data[y_col],
+                self.data[y_col+"_unc"] if y_sigma else None
+            )
 
-        m_unit = (
-            self.get_unit(self.measure_units[y_col]) /
-            self.get_unit(self.measure_units[x_col])
-        ).units
+        if reg == "lin":
+            a_1_unit = self.graph_unit(
+                self.get_unit(self.measure_units[y_col]) /
+                self.get_unit(self.measure_units[x_col])
+            )
+            a_0_unit = self.graph_unit(
+                self.get_unit(self.measure_units[y_col])
+            )
 
-        b_unit = self.get_unit(self.measure_units[y_col]).units
+        elif reg == "log":
+            a_1_unit = self.graph_unit(
+                1 / self.get_unit(self.measure_units[x_col])
+            )
+            a_0_unit = self.graph_unit(
+                self.get_unit(self.measure_units[y_col])
+            )
 
-        if m_name:
-            self.set_single(m_name, f"{m_unit}", m, delta_m, syst=False)
-        if b_name:
-            self.set_single(b_name, f"{b_unit}", b, delta_b, syst=False)
+        elif reg == "loglog":
+            a_1_unit = self.graph_unit(
+                self.get_unit(self.measure_units[x_col]) /
+                self.get_unit(self.measure_units[x_col])
+            )
+            a_0_unit = self.graph_unit(
+                self.get_unit(self.measure_units[y_col])
+            )
 
-    def linear_fit(self, x_data, y_data):
+        if a_1_name:
+            self.set_single(
+                a_1_name, f"{a_1_unit}", a_1, delta_a_1, syst=False
+            )
+        if a_0_name:
+            self.set_single(
+                a_0_name, f"{a_0_unit}", a_0, delta_a_0, syst=False
+            )
+
+    def function_fit(self, f, x_data, y_data, y_sigma=None, p0=None):
         """
-        Fit a linear regression to a set of data.
+        Fit a function to a set of data.
 
         Parameters
         ----------
+        f: Callable.
+            Function of the fit. It must receive three arguments, the
+            independent variable and two parameters.
+
         x_data: Array.
             Independent variable of the regression.
 
         y_data: Array.
             Dependent variable of the regression.
 
+        y_sigma: Array.
+            Uncertainties of the dependent variable.
+
         Returns
         -------
             Coefficient and intercept of the linear function with errors, as
-            well as the pearson coefficient.
+            well as the Pearson coefficient.
 
         """
         if len(x_data[x_data.notna()]) < len(y_data[y_data.notna()]):
@@ -646,44 +731,28 @@ class DataTable():
             x_data = x_data[y_data.notna()]
             y_data = y_data[y_data.notna()]
 
-        # Number of data.
-        N = len(x_data)
+        # Fit the linear function.
+        coeff, errs = curve_fit(f, x_data, y_data, sigma=y_sigma, p0=p0)
 
-        # Sums of the data.
-        Sx = np.sum(x_data)
-        Sy = np.sum(y_data)
+        # Get the resulting parameters and errors.
+        print(errs)
+        delta_a_0, delta_a_1 = np.sqrt(np.diag(errs))
+        delta_a_0, delta_a_1 = self.round_digits([delta_a_0, delta_a_1])
 
-        Sxx = np.sum(x_data**2)
-        Syy = np.sum(y_data**2)
+        a_0, a_1 = self.round_unc(coeff, [delta_a_0, delta_a_1])
 
-        Sxy = np.sum(x_data*y_data)
-
-        # Coefficient and intercept.
-        m = (Sx*Sy - N*Sxy) / (Sx**2 - N*Sxx)
-
-        b = (Sxy - m*Sxx) / Sx
-
-        # Errors.
-        E = sum((y_data - m * x_data - b)**2)
-
-        delta_m = self.round_digits(
-            [np.sqrt(E*N / (N-2) / (N*Sxx - Sx**2))]
-        )[0]
-        delta_b = self.round_digits(
-            [np.sqrt(E*Sxx / (N-2) / (N*Sxx - Sx**2))]
-        )[0]
-
-        m = self.round_unc([m], [delta_m])[0]
-        b = self.round_unc([b], [delta_b])[0]
+        # Compute r.
+        ss_res = np.sum((y_data - f(x_data, *coeff))**2)
+        ss_tot = np.sum((y_data - np.mean(y_data))**2)
 
         # Pearson coefficient.
         r = self.round_digits(
-            [(N*Sxy - Sx*Sy) / np.sqrt((N*Sxx - Sx**2)*(N*Syy - Sy**2))], 4
+            [np.sqrt(1 - ss_res / ss_tot)], 4
         )[0]
 
-        return (m, delta_m), (b, delta_b), r
+        return (a_1, delta_a_1), (a_0, delta_a_0), r
 
-    def log_fit(self, x_data, y_data):
+    def linear_fit(self, x_data, y_data, y_sigma=None, p0=None):
         """
         Fit a linear regression to a set of data.
 
@@ -695,33 +764,71 @@ class DataTable():
         y_data: Array.
             Dependent variable of the regression.
 
-        Returns
-        -------
-            Coefficient and intercept of the logarithmic function with errors,
-            as well as the pearson coefficient.
-
-        """
-        return self.linear_fit(x_data, np.log(y_data))
-
-    def loglog_fit(self, x_data, y_data):
-        """
-        Fit a linear regression to a set of data.
-
-        Parameters
-        ----------
-        x_data: Array.
-            Independent variable of the regression.
-
-        y_data: Array.
-            Dependent variable of the regression.
+        y_sigma: Array.
+            Uncertainties of the dependent variable.
 
         Returns
         -------
             Coefficient and intercept of the linear function with errors, as
-            well as the pearson coefficient.
+            well as the Pearson coefficient.
 
         """
-        return self.linear_fit(np.log(x_data), np.log(y_data))
+        return self.function_fit(
+            self.reg_lambda["lin"], x_data, y_data,
+            y_sigma=y_sigma, p0=p0
+        )
+
+    def log_fit(self, x_data, y_data, y_sigma=None, p0=None):
+        """
+        Fit a linear regression to a set of data.
+
+        Parameters
+        ----------
+        x_data: Array.
+            Independent variable of the regression.
+
+        y_data: Array.
+            Dependent variable of the regression.
+
+        y_sigma: Array.
+            Uncertainties of the dependent variable.
+
+        Returns
+        -------
+            Coefficient and intercept of the logarithmic function with errors,
+            as well as the Pearson coefficient.
+
+        """
+        return self.function_fit(
+            self.reg_lambda["log"], x_data, y_data,
+            y_sigma=y_sigma, p0=p0
+        )
+
+    def loglog_fit(self, x_data, y_data, y_sigma=None, p0=None):
+        """
+        Fit a linear regression to a set of data.
+
+        Parameters
+        ----------
+        x_data: Array.
+            Independent variable of the regression.
+
+        y_data: Array.
+            Dependent variable of the regression.
+
+        y_sigma: Array.
+            Uncertainties of the dependent variable.
+
+        Returns
+        -------
+            Coefficient and intercept of the linear function with errors, as
+            well as the Pearson coefficient.
+
+        """
+        return self.function_fit(
+            self.reg_lambda["loglog"], x_data, y_data,
+            y_sigma=y_sigma, p0=p0
+        )
 
     def save_data(self, label, sep=",", index=False):
         """
@@ -760,8 +867,9 @@ class DataTable():
             json_file.close()
 
     def plot(
-        self, x_col, y_col, *y_cols,
-        reg=None, show=False, legend=False, **kwargs
+        self, x_col, y_col, *y_cols, reg=None, y_sigma=True,
+        show=False, legend=False, grid=False, save_file=None, p0=None,
+        **kwargs
     ):
         """
         Plot two columns.
@@ -778,6 +886,9 @@ class DataTable():
             Run a regression over the data. The options are lin for linear, log
             for semi-logarithmic and loglog for logarithmic regression. If
             None, no regression is run.
+
+        y_sigma: Bool.
+            Flag that indicates whether use or not uncertainties in the fit.
 
         show: Bool.
             Flag that indicates whether to show or not the plot.
@@ -796,9 +907,11 @@ class DataTable():
         y_label = kwargs.get("y_label", y_col)
 
         y_legend = kwargs.get("y_legend", "data")
-        y_legends = kwargs.get("y_legends", "data")
+        y_legends = kwargs.get("y_legends", ["data"]*len(y_cols))
 
-        plt.errorbar(
+        ax = plt.axes()
+
+        ax.errorbar(
             self.data[x_col],
             self.data[y_col],
             xerr=self.data[x_col + "_unc"],
@@ -806,7 +919,7 @@ class DataTable():
         )
 
         for y_col_, y_legend_ in zip(y_cols, y_legends):
-            plt.errorbar(
+            ax.errorbar(
                 self.data[x_col],
                 self.data[y_col_],
                 xerr=self.data[x_col + "_unc"],
@@ -820,47 +933,79 @@ class DataTable():
         plt.ylabel(("$%s$" % y_label) + self.graph_unit(y_unit, True))
 
         if reg:
-            (m, delta_m), (b, delta_b), r = self.reg_func[reg](
-                self.data[x_col], self.data[y_col]
+            (a_1, delta_a_1), (a_0, delta_a_0), r = self.reg_func[reg](
+                self.data[x_col], self.data[y_col],
+                self.data[y_col+"_unc"] if y_sigma else None,
+                p0=p0
             )
 
-            m_text = f"{m} +- {delta_m}"
-            m_unit = self.graph_unit(
-                self.get_unit(self.measure_units[y_col]) /
-                self.get_unit(self.measure_units[x_col])
+            a_1_text = f"{a_1} +- {delta_a_1}"
+
+            a_0_text = f"{a_0} +- {delta_a_0}"
+
+            x_reg = np.linspace(
+                min(self.data[x_col]),
+                max(self.data[x_col]), 300
             )
 
-            b_text = f"{b} +- {delta_b}"
-            b_unit = self.graph_unit(self.get_unit(self.measure_units[y_col]))
-
-            reg_data = self.reg_lambda[reg](self.data[x_col], m, b)
+            reg_data = self.reg_lambda[reg](x_reg, a_0, a_1)
 
             if reg == "lin":
+                a_1_unit = self.graph_unit(
+                    self.get_unit(self.measure_units[y_col]) /
+                    self.get_unit(self.measure_units[x_col])
+                )
+                a_0_unit = self.graph_unit(
+                    self.get_unit(self.measure_units[y_col])
+                )
+
                 reg_label = (
-                    f"${y_label}$ = {m_text} " + m_unit +
-                    f" ${x_label}$ + {b_text} " + b_unit
+                    f"${y_label}$ = {a_1_text} " + a_1_unit +
+                    f" ${x_label}$ + {a_0_text} " + a_0_unit
                 )
 
             elif reg == "log":
+                a_1_unit = self.graph_unit(
+                    1 / self.get_unit(self.measure_units[x_col])
+                )
+                a_0_unit = self.graph_unit(
+                    self.get_unit(self.measure_units[y_col])
+                )
+
                 reg_label = (
-                    f"${y_label}$ = {b_text} " + b_unit +
-                    f" e^({m_text} " + m_unit + f" ${x_label}$)"
+                    f"${y_label}$ = {a_0_text} " + a_0_unit +
+                    f" e^({a_1_text} " + a_1_unit + f" ${x_label}$)"
                 )
                 plt.yscale("log")
 
             elif reg == "loglog":
+                a_1_unit = self.graph_unit(
+                    self.get_unit(self.measure_units[x_col]) /
+                    self.get_unit(self.measure_units[x_col])
+                )
+                a_0_unit = self.graph_unit(
+                    self.get_unit(self.measure_units[y_col])
+                )
                 reg_label = (
-                    f"${y_label}$ = {b_text}" + b_unit +
-                    f" ${x_label}$^({m_text} " + m_unit + ")"
+                    f"${y_label}$ = {a_0_text}" + a_0_unit +
+                    f" ${x_label}$^({a_1_text} " + a_1_unit + ")"
                 )
                 plt.yscale("log")
                 plt.xscale("log")
 
-            plt.plot(self.data[x_col], reg_data, label=f"{reg_label}")
+            reg_label = kwargs.get("reg_label", reg_label)
+
+            ax.plot(x_reg, reg_data, label=f"{reg_label}")
             plt.plot([], [], " ", label=f"r = {r}")
 
-        if legend or reg is not None:
+        if legend or (legend and reg is not None):
             plt.legend()
+
+        if grid:
+            plt.grid(which="both")
+
+        if save_file:
+            plt.savefig(save_file, bbox_inches='tight')
 
         if show:
             plt.show()
@@ -940,7 +1085,7 @@ class DataTable():
                     self.data[self.data.columns[col_i + 1]][ind]
                 )
 
-                row += self.make_cell(f"%.{max(0, dig)}f({unc})" % val)
+                row += self.make_cell(f"%.{3}e({unc})" % val)
 
             print(row)
 
@@ -950,8 +1095,9 @@ class DataTable():
 
         for key in self.singles:
             val = self.singles[key]
+
             unc, dig = self.paren_unc(self.singles_unc[key])
 
             unit = self.console_unit(self.get_unit(self.measure_units[key]))
 
-            print(f"{key} = %.{dig}f({unc}) {unit}" % val)
+            print(f"{key} = %.{abs(dig)}f({self.singles_unc[key]}) {unit}" % val)
